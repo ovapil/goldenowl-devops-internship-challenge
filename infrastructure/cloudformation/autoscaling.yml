@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ecs auto scaling infras
+
+Parameters:
+  ecsstackname:
+    Type: String
+    Default: goldenowl-ecs
+
+  mincapacity:
+    Type: Number
+    Default: 2
+
+  maxcapacity:
+    Type: Number
+    Default: 4
+
+  targetcpuutilization:
+    Type: Number
+    Default: 60
+
+Resources:
+  scalabletarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      ServiceNamespace: ecs
+      ScalableDimension: ecs:service:DesiredCount
+      MinCapacity: !Ref mincapacity
+      MaxCapacity: !Ref maxcapacity
+
+      ResourceId: !Sub
+        - "service/${clustername}/${servicename}"
+        - clustername:
+            Fn::ImportValue:
+              !Sub "${ecsstackname}-ecsclustername"
+          servicename:
+            Fn::ImportValue:
+              !Sub "${ecsstackname}-ecsservicename"
+
+  cpuscalingpolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: goldenowl-cpu-scaling-policy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref scalabletarget
+
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: !Ref targetcpuutilization
+
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+
+        ScaleOutCooldown: 60
+        ScaleInCooldown: 60

@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: network infrastructure
+Parameters:
+  vpccidr:
+    Type: String
+    Default: 10.0.0.0/16
+
+  publicsubnetacidr:
+    Type: String
+    Default: 10.0.1.0/24
+  
+  publicsubnetbcidr:
+    Type: String
+    Default: 10.0.2.0/24
+
+Resources:
+  goldenowlvpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref vpccidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: goldenowl-vpc
+
+  publicsubneta:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref goldenowlvpc
+      CidrBlock: !Ref publicsubnetacidr
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: goldenowl-public-subnet-a
+  
+  publicsubnetb:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref goldenowlvpc
+      CidrBlock: !Ref publicsubnetbcidr
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: goldenowl-public-subnet-b
+
+  internetgateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: goldenowl-internet-gateway
+
+  internetgatewayattachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref goldenowlvpc
+      InternetGatewayId: !Ref internetgateway
+
+  publicroutetable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref goldenowlvpc
+      Tags:
+        - Key: Name
+          Value: goldenowl-public-route-table
+
+  publicroute:
+    Type: AWS::EC2::Route
+    DependsOn: internetgatewayattachment
+    Properties:
+      RouteTableId: !Ref publicroutetable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref internetgateway
+
+  publicsubnetarouteassociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref publicsubneta
+      RouteTableId: !Ref publicroutetable
+
+  publicsubnetbrouteassociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref publicsubnetb
+      RouteTableId: !Ref publicroutetable
+
+Outputs:
+  vpcid:
+    Value: !Ref goldenowlvpc
+    Export:
+      Name: !Sub "${AWS::StackName}-vpcid"
+
+  publicsubnetaid:
+    Value: !Ref publicsubneta
+    Export:
+      Name: !Sub "${AWS::StackName}-publicsubnetaid"
+
+  publicsubnetbid:
+    Value: !Ref publicsubnetb
+    Export:
+      Name: !Sub "${AWS::StackName}-publicsubnetbid"

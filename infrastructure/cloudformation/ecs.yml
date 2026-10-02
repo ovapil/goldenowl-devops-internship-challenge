@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ecs infras
+
+Parameters:
+  networkstackname:
+    Type: String
+    Default: goldenowl-network
+
+  securitystackname:
+    Type: String
+    Default: goldenowl-security
+
+  loadbalancerstackname:
+    Type: String
+    Default: goldenowl-load-balancer
+
+  containerimage:
+    Type: String
+
+  desiredcount:
+    Type: Number
+    Default: 2
+
+Resources:
+  ecscluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: goldenowl-cluster
+
+  ecsloggroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/goldenowl
+      RetentionInDays: 7
+
+  ecstaskexecutionrole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+
+  ecstaskdefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: goldenowl-task
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Cpu: "256"
+      Memory: "512"
+      ExecutionRoleArn: !GetAtt ecstaskexecutionrole.Arn
+      ContainerDefinitions:
+        - Name: goldenowl-app
+          Image: !Ref containerimage
+          Essential: true
+
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ecsloggroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  ecsservice:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: goldenowl-service
+      Cluster: !Ref ecscluster
+      TaskDefinition: !Ref ecstaskdefinition
+      LaunchType: FARGATE
+      DesiredCount: !Ref desiredcount
+      HealthCheckGracePeriodSeconds: 30
+
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+
+          Subnets:
+            - Fn::ImportValue:
+                !Sub "${networkstackname}-publicsubnetaid"
+            - Fn::ImportValue:
+                !Sub "${networkstackname}-publicsubnetbid"
+
+          SecurityGroups:
+            - Fn::ImportValue:
+                !Sub "${securitystackname}-ecssecuritygroupid"
+
+      LoadBalancers:
+        - ContainerName: goldenowl-app
+          ContainerPort: 3000
+          TargetGroupArn:
+            Fn::ImportValue:
+              !Sub "${loadbalancerstackname}-targetgrouparn"
+
+Outputs:
+  ecsclustername:
+    Value: !Ref ecscluster
+    Export:
+      Name: !Sub "${AWS::StackName}-ecsclustername"
+
+  ecsservicename:
+    Value: !GetAtt ecsservice.Name
+    Export:
+      Name: !Sub "${AWS::StackName}-ecsservicename"

@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: load balancer infras
+
+Parameters:
+  networkstackname:
+    Type: String
+    Default: goldenowl-network
+
+  securitystackname:
+    Type: String
+    Default: goldenowl-security
+
+Resources:
+  applicationloadbalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: goldenowl-alb
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+
+      Subnets:
+        - Fn::ImportValue:
+            !Sub "${networkstackname}-publicsubnetaid"
+        - Fn::ImportValue:
+            !Sub "${networkstackname}-publicsubnetbid"
+
+      SecurityGroups:
+        - Fn::ImportValue:
+            !Sub "${securitystackname}-albsecuritygroupid"
+
+  targetgroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: goldenowl-target-group
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${networkstackname}-vpcid"
+
+      Protocol: HTTP
+      Port: 3000
+      TargetType: ip
+
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckPort: traffic-port
+
+  httplistener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref applicationloadbalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref targetgroup
+
+Outputs:
+  targetgrouparn:
+    Value: !Ref targetgroup
+    Export:
+      Name: !Sub "${AWS::StackName}-targetgrouparn"
+
+  loadbalancerdns:
+    Value: !GetAtt applicationloadbalancer.DNSName

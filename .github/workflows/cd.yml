@@ -1,0 +1,67 @@
+name: CD
+on:
+  push:
+    branches:
+      - master
+permissions:
+  id-token: write
+  contents: read
+env:
+  IMAGE_NAME: goldenowl
+  ECS_CLUSTER: goldenowl-cluster
+  ECS_SERVICE: goldenowl-service
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: check repo
+        uses: actions/checkout@v4
+
+      - name: login to docker hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: build & push docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./src
+          file: ./src/Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: conf aws credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: deploy new img to ecs
+        run: |
+          aws cloudformation deploy \
+            --template-file infrastructure/cloudformation/ecs.yml \
+            --stack-name goldenowl-ecs \
+            --parameter-overrides \
+              containerimage=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --capabilities CAPABILITY_IAM \
+            --no-cli-pager
+
+      - name: wait ecs service
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+
+      - name: verify deployment
+        run: |
+          ALB_DNS=$(aws cloudformation describe-stacks \
+            --stack-name goldenowl-load-balancer \
+            --query "Stacks[0].Outputs[?OutputKey=='loadbalancerdns'].OutputValue | [0]" \
+            --output text)
+
+          curl --fail \
+            --retry 10 \
+            --retry-delay 5 \
+            "http://$ALB_DNS/"
