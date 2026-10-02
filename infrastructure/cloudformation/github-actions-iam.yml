@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: github actions oidc infras
+
+Parameters:
+  githubowner:
+    Type: String
+    Default: ovapil
+
+  githubrepo:
+    Type: String
+    Default: goldenowl-devops-internship-challenge
+
+  githubbranch:
+    Type: String
+    Default: master
+
+  githubownerid:
+    Type: String
+
+  githubrepoid:
+    Type: String
+
+Resources:
+  githuboidcprovider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  githubactionsrole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: goldenowl-github-actions-role
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref githuboidcprovider
+            Action:
+              - sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${githubowner}@${githubownerid}/${githubrepo}@${githubrepoid}:ref:refs/heads/${githubbranch}"
+
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AWSCloudFormationFullAccess"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonECS_FullAccess"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/CloudWatchLogsFullAccess"
+
+      Policies:
+        - PolicyName: goldenowl-pass-role
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:PassRole
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/*"
+
+Outputs:
+  githubactionsrolearn:
+    Value: !GetAtt githubactionsrole.Arn
